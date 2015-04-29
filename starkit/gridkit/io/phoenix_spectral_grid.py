@@ -1,25 +1,83 @@
-import os, fnmatch, re
+import os
+import fnmatch
+import re
 
 from astropy import units as u
 from astropy.io import fits
-
 from specutils import Spectrum1D
-
 from sqlalchemy.ext.declarative import declarative_base
-
-from sqlalchemy.orm import sessionmaker, backref, relationship
-
-from sqlalchemy import create_engine
+from sqlalchemy.orm import backref, relationship
 from sqlalchemy import Column, ForeignKey
-
 from sqlalchemy import Integer, Float, String
 
-from starkit.io.spectral_grid import BaseSpectralGridIO
+from starkit.gridkit.io.spectral_grid import BaseSpectralGridIO
 
 PhoenixBase = declarative_base()
 
 
+
+class Spectrum(PhoenixBase):
+    __tablename__ = 'spectra'
+
+    id = Column(Integer, primary_key=True)
+    fpath = Column(String)
+    fname = Column(String)
+
+    base_dir = None
+    wavelength = None
+    flux_unit = 'erg/s/cm2/angstrom'
+
+    @property
+    def full_path(self):
+        if self.base_dir is None:
+            raise AttributeError('base_dir attribute needs to be set')
+        else:
+            return os.path.join(self.base_dir, self.fpath, self.fname)
+
+    def __repr__(self):
+        return '<Spectrum {0} with {1}>'.format(
+            self.fname, ' '.join(self.parameters.to_string()))
+
+    def get_spectrum1d(self):
+        flux = self._read_flux()
+        return Spectrum1D.from_array(self.wavelength, flux,
+                                     unit=u.Unit(self.flux_unit))
+
+    def _read_flux(self):
+        return fits.getdata(self.full_path)
+
+
+class Parameter(PhoenixBase):
+    __tablename__ = 'parameters'
+
+    id = Column(Integer, ForeignKey('spectra.id'), primary_key=True)
+    meta_id = Column(Integer, ForeignKey('meta_parameters.id'))
+
+    teff = Column(Float)
+    logg = Column(Float)
+    feh = Column(Float)
+
+    spectrum = relationship('Spectrum', uselist=False,
+                            backref=backref('parameters', uselist=False))
+
+    param_names = ['teff', 'logg', 'feh']
+
+    def to_string(self):
+        return ['{0}={1}'.format(param_name, getattr(self, param_name))
+         for param_name in ['teff', 'logg', 'feh']]
+
+
+class MetaParameter(PhoenixBase):
+    __tablename__ = 'meta_parameters'
+
+    id = Column(Integer, primary_key=True)
+
+
 class PhoenixSpectralGridIO(BaseSpectralGridIO):
+
+    spectrum_table = Spectrum
+    parameter_table = Parameter
+
     @staticmethod
     def _set_grid_base_dir(base_dir):
         setattr(Spectrum, 'base_dir', base_dir)
@@ -77,50 +135,3 @@ class PhoenixSpectralGridIO(BaseSpectralGridIO):
         return spectral_files
 
 
-
-
-class Spectrum(PhoenixBase):
-    __tablename__ = 'spectra'
-
-    id = Column(Integer, primary_key=True)
-    fpath = Column(String)
-    fname = Column(String)
-
-    base_dir = None
-    wavelength = None
-
-    @property
-    def full_path(self):
-        if self.base_dir is None:
-            raise AttributeError('base_dir attribute needs to be set')
-        else:
-            return os.path.join(self.base_dir, self.fpath, self.fname)
-
-    def __repr__(self):
-        return '<Spectrum {0} with {1}>'.format(
-            self.fname, ' '.join(self.parameters.to_string()))
-
-    def get_spectrum1d(self):
-        Spectrum1D.from_array(self.wavelength, )
-
-class Parameter(PhoenixBase):
-    __tablename__ = 'parameters'
-
-    id = Column(Integer, ForeignKey('spectra.id'), primary_key=True)
-    meta_id = Column(Integer, ForeignKey('meta_parameters.id'))
-    teff = Column(Float)
-    logg = Column(Float)
-    feh = Column(Float)
-
-    spectrum = relationship('Spectrum', uselist=False,
-                            backref=backref('parameters', uselist=False))
-
-    def to_string(self):
-        return ['{0}={1}'.format(param_name, getattr(self, param_name))
-         for param_name in ['teff', 'logg', 'feh']]
-
-
-class MetaParameter(PhoenixBase):
-    __tablename__ = 'meta_parameters'
-
-    id = Column(Integer, primary_key=True)
