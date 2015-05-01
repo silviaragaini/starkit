@@ -1,6 +1,6 @@
 from astropy.io import fits
 
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy import Column, ForeignKey
 from sqlalchemy import Integer, Float, String
@@ -52,15 +52,38 @@ class Spectrum(PhoenixBase):
 class ParameterSetMixin(object):
     ___tablename__ = 'parameter_sets'
 
+    @declared_attr
+    def spectrum_id(cls):
+        return Column(Integer, ForeignKey('spectra.id'))
+
+    @declared_attr
+    def spectrum(cls):
+        return relationship(Spectrum, uselist=False,
+                            backref=backref('parameter_set', uselist=False))
+
+    @classmethod
+    def from_file(cls, fname):
+        param_dict = {}
+        for param in cls.parameters:
+            param_dict[param.name] = param.ingest(fname)
+        return cls(**param_dict)
+
+    def __repr__(self):
+        param_strs = ['{0} = {1}'.format(param.name, getattr(self, param.name))
+                      for param in self.parameters]
+        return '<ParameterSet\n{0}\n>'.format('\n'.join(param_strs))
+
+
 def make_parameter_set():
     type_dict = {'float':Float}
     parameter_classes = parameters.BasePhoenixParameter.__subclasses__()
-    class_dict = {'parameters': [item.name for item in parameter_classes]}
-
+    class_dict = {'parameters': [item() for item in parameter_classes]}
+    class_dict['id'] = Column(Integer, primary_key=True)
     for param in parameter_classes:
-        class_dict[param.name] = Column(type_dict(param.type))
-    class_dict = class_dict.update({item.name:Column()})
+        class_dict[param.name] = Column(type_dict[param.type])
 
-    return type('ParameterSet', (PhoenixBase, ParameterSetMixin), class_dict)
+    class_dict['__tablename__'] = 'parameter_sets'
+
+    return type('ParameterSet', (ParameterSetMixin, PhoenixBase), class_dict)
 
 ParameterSet = make_parameter_set()

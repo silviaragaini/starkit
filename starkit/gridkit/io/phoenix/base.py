@@ -1,9 +1,18 @@
+import os
+import re
+import fnmatch
 
+from astropy.io import fits
+from astropy import units as u
+
+from starkit.gridkit.io.base import BaseSpectralGridIO
+from starkit.gridkit.io.phoenix.alchemy import (Spectrum, ParameterSet,
+                                                PhoenixBase)
 
 class PhoenixSpectralGridIO(BaseSpectralGridIO):
 
     spectrum_table = Spectrum
-    parameter_table = Parameter
+    parameter_set_table = ParameterSet
 
     @staticmethod
     def _set_grid_base_dir(base_dir):
@@ -46,7 +55,7 @@ class PhoenixSpectralGridIO(BaseSpectralGridIO):
                                        '\.PHOENIX.')
         teff, logg, feh = map(float, parameter_pattern.match(fname).groups())
 
-        current_param = Parameter(teff=teff, logg=logg, feh=feh)
+        current_param = ParameterSet(teff=teff, logg=logg, feh=feh)
         return current_param
 
 
