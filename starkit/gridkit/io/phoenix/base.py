@@ -11,58 +11,42 @@ from starkit.gridkit.io.phoenix.alchemy import (Spectrum, ParameterSet,
 
 class PhoenixSpectralGridIO(BaseSpectralGridIO):
 
+    GridBase = PhoenixBase
+
     spectrum_table = Spectrum
     parameter_set_table = ParameterSet
 
-    @staticmethod
-    def _set_grid_base_dir(base_dir):
-        setattr(Spectrum, 'base_dir', base_dir)
-
-    @staticmethod
-    def _set_spectrum_wavelength(wavelength):
-        setattr(Spectrum, 'wavelength', wavelength)
-
-    @staticmethod
-    def _load_wavelength_solution(fname, unit, type):
-        return fits.getdata(fname, ext=0) * u.Unit(unit)
+    wavelength_unit = u.angstrom
 
 
 
-    def initialize_database(self, config_dict):
-        self.engine = self.load_engine(init_db=True, **config_dict['database'])
-        self.initialize_session()
-        PhoenixBase.metadata.create_all(self.engine)
-        spectral_files = self.get_spectral_files(config_dict['base_dir'])
+    def _load_wavelength_solution(self, fname):
+        return fits.getdata(fname, ext=0) * self.wavelength_unit
 
-        self.read_spectra(spectral_files, config_dict['base_dir'])
+    def ingest(self):
+        self.read_spectra()
 
-    def read_spectra(self, spectral_files, base_dir):
+
+    def read_spectra(self):
+        spectral_files = self.get_spectral_files()
         no_of_spectra = len(spectral_files)
         for i, relative_path in enumerate(spectral_files):
             fname = os.path.basename(relative_path)
-            fpath = os.path.relpath(os.path.dirname(relative_path), base_dir)
+            fpath = os.path.relpath(os.path.dirname(relative_path),
+                                    self.base_dir)
             print "{0} / {1} importing {2}".format(i, no_of_spectra, fname)
             spectrum = Spectrum(fname=fname, fpath=fpath)
-            parameter = self.get_parameter_object(fpath, fname)
-            parameter.spectrum = spectrum
-            self.session.add_all([spectrum, parameter])
+            parameter_set = ParameterSet.from_file(spectrum.full_path)
+            parameter_set.spectrum = spectrum
+            self.session.add_all([spectrum, parameter_set])
         self.session.commit()
 
 
-    @staticmethod
-    def get_parameter_object(fpath, fname):
-        parameter_pattern = re.compile('lte(\d+)-(\d+\.\d+)([+-]\d+\.\d+)'
-                                       '\.PHOENIX.')
-        teff, logg, feh = map(float, parameter_pattern.match(fname).groups())
-
-        current_param = ParameterSet(teff=teff, logg=logg, feh=feh)
-        return current_param
 
 
-    @staticmethod
-    def get_spectral_files(base_dir):
+    def get_spectral_files(self):
         spectral_files = []
-        for root, dirs, files in os.walk(base_dir):
+        for root, dirs, files in os.walk(self.base_dir):
             if 'grid/Z' not in root:
                 continue
             for filename in fnmatch.filter(files, '*.fits'):

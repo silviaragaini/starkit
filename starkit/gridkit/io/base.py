@@ -1,13 +1,11 @@
 import os
 import logging
+from abc import ABCMeta, abstractmethod
 
-
-import yaml
 import numpy as np
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
 
 import pandas as pd
 import h5py
@@ -21,39 +19,39 @@ class BaseSpectralGridIO(object):
     Base class for reading in the spectral grid information
     """
 
-    def __init__(self, yaml_fname):
-        config_dict = yaml.load(open(yaml_fname))
-        self.engine = self.load_engine(**config_dict['database'])
-        if self.engine is None:
-            self.initialize_database(config_dict)
-        else:
-            self.initialize_session()
-        self._set_grid_base_dir(config_dict['base_dir'])
+    __metaclass__ = ABCMeta
 
-        self.wavelength = self._load_wavelength_solution(
-            **config_dict['wavelength'])
+    GridBase = None
+
+    def __init__(self, db_url, base_dir,
+                 wavelength_fname='WAVE_PHOENIX-ACES-AGSS-COND-2011.fits'):
+        self.engine = create_engine(db_url)
+        self.GridBase.metadata.create_all(self.engine)
+        self.GridBase.metadata.bind = self.engine
+
+        self.session = sessionmaker(bind=self.engine)()
+
+        self._set_grid_base_dir(base_dir)
+
+        self.wavelength = self._load_wavelength_solution(wavelength_fname)
 
         self._set_spectrum_wavelength(self.wavelength)
+
+
+
+    def _set_grid_base_dir(self, base_dir):
+        setattr(self.spectrum_table, 'base_dir', base_dir)
+        self.base_dir = base_dir
+
+
+    def _set_spectrum_wavelength(self, wavelength):
+        setattr(self.spectrum_table, 'wavelength', wavelength)
+
 
     @staticmethod
     def _load_wavelength_solution():
         raise NotImplementedError('This needs to be implemented in subclasses')
 
-    @staticmethod
-    def load_engine(fname, type='sqlite', init_db=False):
-        if type!='sqlite3':
-            raise ValueError('Currently only type "sqlite" is supported')
-
-        if not os.path.exists(fname) and init_db is not True:
-            logger.info('Database {0} does not exist'.format(fname))
-            return None
-        else:
-            return create_engine('sqlite:///{0}'.format(fname))
-
-
-
-    def initialize_session(self):
-        self.session = sessionmaker(bind=self.engine)()
 
     @staticmethod
     def _create_compound_model(models):
