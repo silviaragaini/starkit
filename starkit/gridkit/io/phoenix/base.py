@@ -1,13 +1,16 @@
 import os
-import re
+
 import fnmatch
 
+import h5py
 from astropy.io import fits
 from astropy import units as u
 
 from starkit.gridkit.io.base import BaseSpectralGridIO
 from starkit.gridkit.io.phoenix.alchemy import (Spectrum, ParameterSet,
                                                 PhoenixBase)
+
+from starkit.gridkit.io.phoenix.plugin import PhoenixProcess
 
 class PhoenixSpectralGridIO(BaseSpectralGridIO):
 
@@ -53,3 +56,17 @@ class PhoenixSpectralGridIO(BaseSpectralGridIO):
                 spectral_files.append(os.path.join(root, filename))
 
         return spectral_files
+
+    def to_hdf(self, fname, filter_tuple, R, wavelength_range, clobber=False):
+        plugin = PhoenixProcess(self.wavelength.value, R, wavelength_range)
+        super(PhoenixSpectralGridIO, self).to_hdf(fname, filter_tuple, plugin,
+                                                  clobber)
+
+        with h5py.File(fname, mode='a') as fh:
+            fh['wavelength'].attrs['grid'] = 'log'
+            fh['wavelength'].attrs['R'] =  R
+
+
+
+
+

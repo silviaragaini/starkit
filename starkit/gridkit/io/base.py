@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 import pandas as pd
 import h5py
+from specutils import Spectrum1D
 
 from astropy import units as u
 
@@ -65,10 +66,10 @@ class BaseSpectralGridIO(object):
 
     def get_spectrum_query(self, filter_tuple):
             return self.session.query(self.spectrum_table).join(
-            self.parameter_table).filter(*filter_tuple)
+            self.parameter_set_table).filter(*filter_tuple)
 
 
-    def get_query_data(self, filter_tuple, models=[],
+    def get_query_data(self, filter_tuple, plugin,
                        warning_threshold=1 * u.gigabyte):
         """
         Write spectra to disk
@@ -76,17 +77,16 @@ class BaseSpectralGridIO(object):
         :param models:
         :return:
         """
-        compound_model = BaseSpectralGridIO._create_compound_model(models)
 
         query = self.get_spectrum_query(filter_tuple)
 
         sample_spectrum_row = query.first()
-        sample_spectrum = compound_model(sample_spectrum_row.get_spectrum1d())
+        sample_spectrum_flux = plugin(sample_spectrum_row.get_spectrum1d().flux)
 
         no_spectra = query.count()
 
         size_of_spectra = (query.count() *
-                           len(sample_spectrum.flux)) * 8 * u.byte
+                           len(sample_spectrum_flux)) * 8 * u.byte
 
         if size_of_spectra > warning_threshold:
             continue_query = raw_input('The size of the spectra are {0:.2f}. '
@@ -98,22 +98,27 @@ class BaseSpectralGridIO(object):
                     size_of_spectra.to(warning_threshold.unit)))
 
         fluxes = np.empty((query.count(),
-                          len(sample_spectrum.flux)))
+                          len(sample_spectrum_flux)))
         parameters = []
-        param_names = sample_spectrum_row.parameters.param_names
+        param_names = [item.name
+                       for item in sample_spectrum_row.parameter_set.parameters]
+
         for i, spectrum_row in enumerate(query):
             print "{0}/{1}".format(i, no_spectra)
             spectrum = spectrum_row.get_spectrum1d()
-            fluxes[i] = compound_model(spectrum).flux
-            parameters.append([getattr(spectrum_row.parameters, key)
+            fluxes[i] = plugin(spectrum.flux)
+            parameters.append([getattr(spectrum_row.parameter_set, key)
                                for key in param_names])
 
         parameters = pd.DataFrame(parameters, columns= param_names)
+        output_sample_spectrum = Spectrum1D.from_array(
+            plugin.output_wavelength * u.angstrom, sample_spectrum_flux)
 
-        return sample_spectrum, parameters, fluxes
+        return output_sample_spectrum, parameters, fluxes
 
-    def to_hdf5(self, fname, filter_tuple, models=[], clobber=False):
-        sample_spectrum, parameters, fluxes = self.get_query_data(filter_tuple, models)
+    def to_hdf(self, fname, filter_tuple, plugin, clobber=False):
+        sample_spectrum, parameters, fluxes = self.get_query_data(filter_tuple,
+                                                                  plugin)
 
         if os.path.exists(fname):
             if clobber:
