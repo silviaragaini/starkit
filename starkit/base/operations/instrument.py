@@ -9,8 +9,10 @@ from astropy import units as u, constants as const
 
 from starkit.base.operations.base import SpectralOperationModel
 
+class InstrumentOperationModel(SpectralOperationModel):
+    pass
 
-class InstrumentConvolve(SpectralOperationModel):
+class InstrumentConvolve(InstrumentOperationModel):
     """
     Convolve with a gaussian with given resolution to mimick an instrument
 
@@ -25,8 +27,10 @@ class InstrumentConvolve(SpectralOperationModel):
 
     """
 
-    R = modeling.Parameter()
+    operation_name = 'resolution'
 
+    R = modeling.Parameter()
+    requires_observed = False
 
     def __init__(self, R=np.inf, grid_R=None, grid_sampling=None):
         super(InstrumentConvolve, self).__init__(R=R)
@@ -47,7 +51,7 @@ class InstrumentConvolve(SpectralOperationModel):
 
         return wavelength, nd.gaussian_filter1d(flux, sigma)
 
-class Interpolate(SpectralOperationModel):
+class Interpolate(InstrumentOperationModel):
 
     """
     This class can be called to do a interpolation on a given spectrum.
@@ -61,6 +65,8 @@ class Interpolate(SpectralOperationModel):
         (model) spectrum to.
     """
 
+    requires_observed = True
+    operation_name = 'interpolate'
 
     def __init__(self, observed):
         super(SpectralOperationModel, self).__init__()
@@ -74,7 +80,7 @@ class Interpolate(SpectralOperationModel):
                                       wavelength, flux)
 
 
-class Normalize(SpectralOperationModel):
+class Normalize(InstrumentOperationModel):
     """Normalize a model spectrum to an observed one using a polynomial
 
     Parameters
@@ -85,7 +91,9 @@ class Normalize(SpectralOperationModel):
         The degree of the polynomial
     """
 
+    requires_observed = True
 
+    operation_name = 'normalize'
 
     def __init__(self, observed, npol):
         super(Normalize, self).__init__()
@@ -148,7 +156,9 @@ class NormalizeParts(object):
     npol : list of int
         Polynomial degrees for the different parts
     """
-    param_names = []
+
+
+    requires_observed = True
 
     def __init__(self, observed, parts, npol):
         self.npol = npol

@@ -11,3 +11,4 @@ from ._astropy_init import *
 # ----------------------------------------------------------------------------
 
 # For egg_info test builds to pass, put package imports here.
+from starkit.base.assemble_model import assemble_model

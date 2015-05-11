@@ -6,17 +6,16 @@ import numpy as np
 
 from starkit.base.operations.base import SpectralOperationModel
 
-class RotationalBroadening(SpectralOperationModel):
+class StellarOperationModel(SpectralOperationModel):
+    pass
 
+class RotationalBroadening(StellarOperationModel):
+    operation_name = 'rotation'
     vrot = modeling.Parameter()
     limb_darkening = modeling.Parameter(fixed=True, default=0.6)
 
-    resolution = (20 * u.km / u.s / const.c).to(1)
-    limb_darkening = 0.6
-    param_names = ['vrot']
-
-    def __init__(self, velocity_per_pix=None, **kwargs):
-        super(RotationalBroadening, self).__init__(**kwargs)
+    def __init__(self, velocity_per_pix=None, vrot=0):
+        super(RotationalBroadening, self).__init__(vrot=vrot)
 
         self.c_in_kms = const.c.to(u.km / u.s).value
 
@@ -26,7 +25,7 @@ class RotationalBroadening(SpectralOperationModel):
         else:
             self.log_sampling = False
 
-    def rotational_profile(self, vrot):
+    def rotational_profile(self, vrot, limb_darkening):
         vrot_by_c = np.maximum(0.0001, np.abs(vrot)) / self.c_in_kms
 
         half_width_pix = np.round((self.c_in_kms /
@@ -37,26 +36,31 @@ class RotationalBroadening(SpectralOperationModel):
         profile = np.maximum(0.,
                              1. - (profile_velocity / vrot_by_c) ** 2)
 
-        profile = ((2 * (1-self.limb_darkening) * np.sqrt(profile) +
-                    0.5 * np.pi * self.limb_darkening * profile) /
-                   (np.pi * vrot_by_c * (1. - self.limb_darkening / 3.)))
+        profile = ((2 * (1-limb_darkening) * np.sqrt(profile) +
+                    0.5 * np.pi * limb_darkening * profile) /
+                   (np.pi * vrot_by_c * (1. - limb_darkening / 3.)))
         return profile/profile.sum()
 
 
-    def evaluate(self, wavelength, flux, v_rot):
+    def evaluate(self, wavelength, flux, v_rot, limb_darkening):
         if self.velocity_per_pix is None:
             raise NotImplementedError('Regridding not implemented yet')
 
-        profile = self.rotational_profile(v_rot)
+        if np.abs(v_rot) < 1e-5:
+            return wavelength, flux
+
+        profile = self.rotational_profile(v_rot, limb_darkening)
 
         return wavelength, fftconvolve(flux, profile, mode='same')
 
-class DopplerShift(SpectralOperationModel):
+class DopplerShift(StellarOperationModel):
+
+    operation_name = 'doppler'
 
     vrad = modeling.Parameter()
 
-    def __init__(self, *args, **kwargs):
-        super(DopplerShift, self).__init__(*args, **kwargs)
+    def __init__(self, vrad=0):
+        super(DopplerShift, self).__init__(vrad=0)
         self.c_in_kms = const.c.to(u.km / u.s).value
 
 
@@ -68,37 +72,27 @@ class DopplerShift(SpectralOperationModel):
 
 
 
-class CCM89Extinction(object):
-    param_names = ['a_v', 'r_v']
+class CCM89Extinction(StellarOperationModel):
 
+    operation_name = 'ccm89_extinction'
 
-    @property
-    def a_v(self):
-        return self._a_v
-
-    @a_v.setter
-    def a_v(self, value):
-        self._a_v = np.abs(value)
+    a_v = modeling.Parameter(default=0.0)
+    r_v = modeling.Parameter(default=3.1)
 
     @property
-    def r_v(self):
-        return self._r_v
-
-    @r_v.setter
-    def r_v(self, value):
-        self._r_v = np.abs(value)
-
+    def ebv(self):
+        return self.a_v / self.r_v
 
     def __init__(self, a_v=0.0, r_v=3.1):
-        self.a_v = a_v
-        self.r_v = r_v
+        super(CCM89Extinction, self).__init__(a_v=a_v, r_v=r_v)
 
-    def __call__(self, spectrum):
 
+    def evaluate(self, wavelength, spectrum, a_v, r_v):
         from specutils import extinction
-        extinction_factor = np.ones_like(spectrum.wavelength.value)
-        valid_wavelength = ((spectrum.wavelength > 910 * u.angstrom) &
-                            (spectrum.wavelength < 33333 * u.angstrom))
+        extinction_factor = np.ones_like(wavelength)
+        valid_wavelength = ((wavelength > 910 * u.angstrom) &
+                            (wavelength < 33333 * u.angstrom))
+
         extinction_factor[valid_wavelength] = 10 ** (-0.4 * extinction.extinction_ccm89(
             spectrum.wavelength[valid_wavelength], a_v=self.a_v,
             r_v=self.r_v).to(u.angstrom).value)
