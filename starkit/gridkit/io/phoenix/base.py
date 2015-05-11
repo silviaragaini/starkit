@@ -57,14 +57,17 @@ class PhoenixSpectralGridIO(BaseSpectralGridIO):
 
         return spectral_files
 
-    def to_hdf(self, fname, filter_tuple, R, wavelength_range, clobber=False):
-        plugin = PhoenixProcess(self.wavelength.value, R, wavelength_range)
+    def to_hdf(self, fname, filter_tuple, R, wavelength_range,
+               pre_sampling=2, sampling=4, clobber=False):
+        plugin = PhoenixProcess(self.wavelength.value, R, wavelength_range,
+                                pre_sampling=pre_sampling, sampling=sampling)
         super(PhoenixSpectralGridIO, self).to_hdf(fname, filter_tuple, plugin,
                                                   clobber)
 
         with h5py.File(fname, mode='a') as fh:
             fh['wavelength'].attrs['grid'] = 'log'
             fh['wavelength'].attrs['R'] =  R
+            fh['wavelength'].attrs['R_sampling'] = sampling
 
 
 
