@@ -41,6 +41,12 @@ except ImportError:
 # Load all of the global Astropy configuration
 from astropy_helpers.sphinx.conf import *
 
+extensions = [
+    'sphinx.ext.autodoc',
+    'sphinx.ext.intersphinx',
+    'sphinx.ext.todo',
+    'sphinx.ext.coverage',
+    'sphinx.ext.pngmath']
 # Get configuration information from setup.cfg
 from distutils import config
 conf = config.ConfigParser()
