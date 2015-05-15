@@ -14,6 +14,14 @@ class RotationalBroadening(StellarOperationModel):
     vrot = modeling.Parameter()
     limb_darkening = modeling.Parameter(fixed=True, default=0.6)
 
+    @classmethod
+    def from_grid(cls, grid, vrot=0):
+        velocity_per_pix = getattr(grid, 'velocity_per_pix', None)
+
+        return cls(velocity_per_pix=velocity_per_pix, vrot=vrot)
+
+
+
     def __init__(self, velocity_per_pix=None, vrot=0):
         super(RotationalBroadening, self).__init__(vrot=vrot)
 
@@ -24,6 +32,7 @@ class RotationalBroadening(StellarOperationModel):
             self.velocity_per_pix = u.Quantity(velocity_per_pix, u.km / u.s).value
         else:
             self.log_sampling = False
+            self.velocity_per_pix = None
 
     def rotational_profile(self, vrot, limb_darkening):
         vrot_by_c = np.maximum(0.0001, np.abs(vrot)) / self.c_in_kms
@@ -87,16 +96,13 @@ class CCM89Extinction(StellarOperationModel):
         super(CCM89Extinction, self).__init__(a_v=a_v, r_v=r_v)
 
 
-    def evaluate(self, wavelength, spectrum, a_v, r_v):
+    def evaluate(self, wavelength, flux, a_v, r_v):
         from specutils import extinction
         extinction_factor = np.ones_like(wavelength)
-        valid_wavelength = ((wavelength > 910 * u.angstrom) &
-                            (wavelength < 33333 * u.angstrom))
+        valid_wavelength = ((wavelength > 910) & (wavelength < 33333))
 
         extinction_factor[valid_wavelength] = 10 ** (-0.4 * extinction.extinction_ccm89(
-            spectrum.wavelength[valid_wavelength], a_v=self.a_v,
-            r_v=self.r_v).to(u.angstrom).value)
+            wavelength[valid_wavelength] * u.angstrom, a_v=np.abs(a_v),
+            r_v=np.abs(r_v)))
 
-
-        return Spectrum1D.from_array(spectrum.wavelength,
-                                     extinction_factor * spectrum.flux)
+        return wavelength, extinction_factor * flux

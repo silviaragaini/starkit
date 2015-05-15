@@ -3,11 +3,12 @@ from astropy import units as u, constants as const
 import pandas as pd
 import h5py
 from scipy import interpolate
+from starkit.fitkit.samplers.priors import UniformPrior
 
 
 
 class BaseSpectralGrid(modeling.FittableModel):
-    inputs = ()
+    inputs = tuple()
     outputs = ('wavelength', 'flux')
 
     def __init__(self, wavelength, index, fluxes, **kwargs):
@@ -26,8 +27,23 @@ class BaseSpectralGrid(modeling.FittableModel):
 #    def prepare_outputs(self, format_info, *outputs, **kwargs):
 #        return outputs
 
+    def get_grid_extent(self):
+        extents = []
+        for i, param_name in enumerate(self.param_names):
+            extents.append((self.interpolator.points[:,i].min(),
+                            self.interpolator.points[:,i].max()))
+        return extents
+
+    def get_grid_uniform_priors(self):
+        extents = self.get_grid_extent()
+        priors = []
+        for extent in extents:
+            priors.append(UniformPrior(*extent))
+
+        return priors
+
     def evaluate(self, *args):
-        return self.wavelength, self.interpolator(*(item[0] for item in args))
+        return self.wavelength, self.interpolator(*args)
 
     @staticmethod
     def _generate_interpolator(index, fluxes):

@@ -1,7 +1,17 @@
-from starkit.base.operations import stellar_operations, instrument_operations
+from starkit.base.operations import (stellar_operations, instrument_operations,
+                                     stellar_parameter2model,
+                                     instrument_parameter2model)
 
-def assemble_model(spectral_grid, spectral_operations, spectrum=None,
-                   normalize_npol=None):
+from starkit.base.operations.instrument import Interpolate, Normalize
+
+
+def fit_parameters_property(self):
+    return [getattr(self, param_name) for param_name in self.param_names
+            if getattr(self, param_name).fixed is False]
+
+
+def assemble_model(spectral_grid, spectrum=None,
+                   normalize_npol=None, **kwargs):
     """
 
     Parameters
@@ -31,15 +41,42 @@ def assemble_model(spectral_grid, spectral_operations, spectrum=None,
     """
 
     ObservationModel = spectral_grid
-    for operation in spectral_operations:
-        if operation in stellar_operations:
-            ObservationModel = ObservationModel | stellar_operations[operation]
+    parameters = kwargs.copy()
 
-        elif operation in instrument_operations:
-            ObservationModel = ObservationModel | instrument_operations[
-                                                     operation]
+    for operation in (stellar_operations.values() +
+                          instrument_operations.values()):
+        param_values = {}
+        for param_name in operation.param_names:
+            if param_name in parameters:
+                param_values[param_name] = parameters.pop(param_name)
+
+        if param_values != {}:
+            if getattr(operation, 'requires_observed', False):
+                param_values['observed'] = spectrum
+
+            if hasattr(operation, 'from_grid'):
+                current_stellar_operation = operation.from_grid(spectral_grid,
+                                                                **param_values)
+            else:
+                current_stellar_operation = operation(**param_values)
+            ObservationModel = ObservationModel | current_stellar_operation
+
+    if parameters != {}:
+        raise ValueError('Given parameters {0} not understood'.format(
+            ','.join(parameters.join())))
+
+    if spectrum is not None:
+        ObservationModel = ObservationModel | Interpolate(spectrum)
+        if normalize_npol is not None:
+            ObservationModel = ObservationModel | Normalize(spectrum,
+                                                            normalize_npol)
+
+
+    ObservationModel.__class__.fit_parameters = property(fit_parameters_property)
+    ObservationModel.rename('ObservationModel')
 
     return ObservationModel
+
 
 
 

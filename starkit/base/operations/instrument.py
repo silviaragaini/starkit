@@ -32,6 +32,13 @@ class InstrumentConvolve(InstrumentOperationModel):
     R = modeling.Parameter()
     requires_observed = False
 
+
+    @classmethod
+    def from_grid(cls, grid, R=np.inf):
+        grid_R = getattr(grid, 'R', None)
+        grid_sampling = getattr(grid, 'R_sampling', None)
+        return cls(R=R, grid_R=grid_R, grid_sampling=grid_sampling)
+
     def __init__(self, R=np.inf, grid_R=None, grid_sampling=None):
         super(InstrumentConvolve, self).__init__(R=R)
         self.grid_sampling = grid_sampling
@@ -102,19 +109,19 @@ class Normalize(InstrumentOperationModel):
 
     def _update_observed_spectrum(self, observed):
         if getattr(observed, 'uncertainty', None) is None:
-            self.uncertainty = 1. * observed.flux.unit
+            self.uncertainty = 1.
         else:
             self.uncertainty = getattr(observed.uncertainty, 'array',
-                                       observed.uncertainty)
-        self.signal_to_noise = observed.flux / self.uncertainty
+                                       observed.uncertainty).value
+        self.signal_to_noise = observed.flux.value / self.uncertainty
         self.flux_unit = observed.unit
-        self._rcond = (len(observed.flux) *
+        self._rcond = (len(observed.flux.value) *
                        np.finfo(observed.flux.dtype).eps)
         self._Vp = np.polynomial.polynomial.polyvander(
-            observed.wavelength/observed.wavelength.mean() - 1., self.npol)
-        self.domain = u.Quantity([observed.wavelength.min(),
-                                  observed.wavelength.max()])
-        self.window = self.domain/observed.wavelength.mean() - 1.
+            observed.wavelength.value/observed.wavelength.mean().value - 1., self.npol)
+        self.domain = u.Quantity([observed.wavelength.min().value,
+                                  observed.wavelength.max().value])
+        self.window = self.domain/observed.wavelength.mean().value - 1.
 
 
     def evaluate(self, wavelength, flux):
@@ -123,7 +130,7 @@ class Normalize(InstrumentOperationModel):
         V = self._Vp * (flux / self.uncertainty)[:, np.newaxis]
         # normalizes different powers
         scl = np.sqrt((V*V).sum(0))
-        if np.isfinite(scl[0].value):  # check for validity before evaluating
+        if np.isfinite(scl[0]):  # check for validity before evaluating
             sol, resids, rank, s = np.linalg.lstsq(V/scl, self.signal_to_noise,
                                                    self._rcond)
             sol = (sol.T / scl).T
