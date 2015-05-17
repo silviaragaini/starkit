@@ -18,6 +18,38 @@ class Chi2Likelihood(modeling.Model):
 
 
     def evaluate(self, wavelength, flux):
-        return -0.5 * np.sum(
+        loglikelihood =  -0.5 * np.sum(
             ((self.observed_flux - flux) / self.observed_uncertainty)**2)
+        if np.isnan(loglikelihood):
+            return -1e99
+        else:
+            return loglikelihood
 
+class PhotometryColorLikelihood(modeling.Model):
+    inputs = ('photometry',)
+    outputs = ('loglikelihood',)
+
+    def __init__(self, magnitude_set):
+        super(PhotometryColorLikelihood, self).__init__()
+        self.colors = (magnitude_set.magnitudes[:-1] -
+                       magnitude_set.magnitudes[1:])
+        self.color_uncertainties = np.sqrt(magnitude_set.magnitudes[:-1]**2 +
+                                           magnitude_set.magnitudes[1:]**2)
+
+    def evaluate(self, photometry):
+        synth_colors = photometry[:-1] - photometry[1:]
+        loglikelihood = -0.5 * np.sum(((self.colors - synth_colors)
+                                       / self.color_uncertainties)**2)
+        return loglikelihood
+
+class Addition(modeling.Model):
+
+    inputs = ('a', 'b')
+    outputs = ('x', )
+
+    def __init__(self):
+        super(Addition, self).__init__()
+
+    @staticmethod
+    def evaluate(a, b):
+        return a + b

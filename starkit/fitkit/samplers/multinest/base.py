@@ -28,10 +28,14 @@ else:
 def multinest_evaluate(self, model_param, ndim, nparam):
     # returns the likelihood of observing the data given the model param_names
 
+    model_param = np.array([model_param[i] for i in xrange(np.sum(~self.fixed_mask()))])
 
     self.parameters[~self.fixed_mask()] = model_param
 
-    return self()
+
+    loglikelihood = self()
+
+    return loglikelihood
 
 def fixed_mask(self):
     return np.array([getattr(self, param_name).fixed
@@ -87,6 +91,7 @@ class MultiNestResult(object):
         Reading the posterior data into a pandas dataframe
 
         """
+
         posterior_data = pd.read_csv('{0}_.txt'.format(basename),
                            delim_whitespace=True,
                            names=['posterior', 'x'] + parameter_names)
@@ -132,7 +137,14 @@ class MultiNestResult(object):
         return self._mean
 
 
-
+    def plot_triangle(self, **kwargs):
+        try:
+            from triangle import corner
+        except ImportError:
+            raise ImportError('Plotting requires trianglepy')
+        data_columns = self.posterior_data.columns[2:]
+        corner(self.posterior_data[data_columns],
+               weights=self.posterior_data.posterior, **kwargs)
 
 
 
@@ -175,7 +187,7 @@ class MultiNest(object):
 
     @property
     def n_params(self):
-        return np.sum(self.likelihood.fixed_mask())
+        return np.sum(~self.likelihood.fixed_mask())
 
     @property
     def basename_(self):
@@ -222,9 +234,11 @@ class MultiNest(object):
 
         logger.info("Fit finished - took {0:.2f} s"
                     .format(time.time() - start_time))
+        fitted_parameter_names = [item for item in self.likelihood.param_names
+                                  if not self.likelihood.fixed[item]]
 
         self.result = MultiNestResult.from_multinest_basename(
-            basename, self.likelihood.param_names)
+            basename, fitted_parameter_names)
 
         if clean_up == True:
             logger.info("Cleaning up - deleting {0}".format(run_dir))

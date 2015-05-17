@@ -5,6 +5,8 @@ import h5py
 from scipy import interpolate
 from starkit.fitkit.samplers.priors import UniformPrior
 
+import numpy as np
+
 
 
 class BaseSpectralGrid(modeling.FittableModel):
@@ -43,7 +45,9 @@ class BaseSpectralGrid(modeling.FittableModel):
         return priors
 
     def evaluate(self, *args):
-        return self.wavelength, self.interpolator(*args)
+
+        return self.wavelength, self.interpolator(np.array(
+            args).reshape(len(self.param_names)))[0]
 
     @staticmethod
     def _generate_interpolator(index, fluxes):

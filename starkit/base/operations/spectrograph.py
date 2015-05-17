@@ -7,12 +7,44 @@ from scipy import ndimage as nd
 from astropy import modeling
 from astropy import units as u, constants as const
 
-from starkit.base.operations.base import SpectralOperationModel
+from starkit.base.operations.base import (SpectralOperationModel,
+                                          InstrumentOperationModel)
+from starkit.fix_spectrum1d import Spectrum1D
 
-class InstrumentOperationModel(SpectralOperationModel):
+def prepare_observed(observed):
+    """
+    Preparing an observed spectrum
+
+    Parameters
+    ----------
+    observed: Spectrum1D object
+
+    """
+
+    wavelength, flux = observed.wavelength, observed.flux
+
+    if getattr(observed, 'uncertainty', None) is None:
+        uncertainty = np.ones_like(flux)
+    else:
+        uncertainty = getattr(observed.uncertainty, 'array',
+                                       observed.uncertainty).value
+
+    wavelength_order = np.argsort(wavelength)
+
+    spec = Spectrum1D.from_array(wavelength[wavelength_order],
+                                 flux[wavelength_order])
+    spec.uncertainty = uncertainty[wavelength_order]
+
+    return spec
+
+
+
+
+
+class SpectrographOperationModel(InstrumentOperationModel):
     pass
 
-class InstrumentConvolve(InstrumentOperationModel):
+class InstrumentConvolve(SpectrographOperationModel):
     """
     Convolve with a gaussian with given resolution to mimick an instrument
 
@@ -45,20 +77,20 @@ class InstrumentConvolve(InstrumentOperationModel):
         self.grid_R = grid_R
 
     def evaluate(self, wavelength, flux, R):
-        if np.isinf(self.R.value):
+        if np.isinf(R):
             return wavelength, flux
 
         if self.grid_R is None:
             raise NotImplementedError('grid_R not given - this mode is not '
                                       'implemented yet')
-        rescaled_R = 1 / np.sqrt((1/self.R)**2 - (1 / self.grid_R)**2 )
+        rescaled_R = 1 / np.sqrt((1/R)**2 - (1 / self.grid_R)**2 )
 
         sigma = ((self.grid_R / rescaled_R) * self.grid_sampling /
                      (2 * np.sqrt(2 * np.log(2))))
 
         return wavelength, nd.gaussian_filter1d(flux, sigma)
 
-class Interpolate(InstrumentOperationModel):
+class Interpolate(SpectrographOperationModel):
 
     """
     This class can be called to do a interpolation on a given spectrum.
@@ -79,15 +111,15 @@ class Interpolate(InstrumentOperationModel):
         super(SpectralOperationModel, self).__init__()
         self._update_observed_spectrum(observed)
 
-    def _update_observed_spectrum(self, observed_spectrum):
-        self.observed = observed_spectrum
+    def _update_observed_spectrum(self, observed):
+        self.observed = prepare_observed(observed)
 
     def evaluate(self, wavelength, flux):
         return self.observed.wavelength.value, np.interp(self.observed.wavelength.value,
                                       wavelength, flux)
 
 
-class Normalize(InstrumentOperationModel):
+class Normalize(SpectrographOperationModel):
     """Normalize a model spectrum to an observed one using a polynomial
 
     Parameters
@@ -108,12 +140,10 @@ class Normalize(InstrumentOperationModel):
         self._update_observed_spectrum(observed)
 
     def _update_observed_spectrum(self, observed):
-        if getattr(observed, 'uncertainty', None) is None:
-            self.uncertainty = 1.
-        else:
-            self.uncertainty = getattr(observed.uncertainty, 'array',
-                                       observed.uncertainty).value
-        self.signal_to_noise = observed.flux.value / self.uncertainty
+        self.observed = prepare_observed(observed)
+
+        self.signal_to_noise = (self.observed.flux.value /
+                                self.observed.uncertainty.value)
         self.flux_unit = observed.unit
         self._rcond = (len(observed.flux.value) *
                        np.finfo(observed.flux.dtype).eps)
@@ -127,7 +157,7 @@ class Normalize(InstrumentOperationModel):
     def evaluate(self, wavelength, flux):
         # V[:,0]=mfi/e, Vp[:,1]=mfi/e*w, .., Vp[:,npol]=mfi/e*w**npol
 
-        V = self._Vp * (flux / self.uncertainty)[:, np.newaxis]
+        V = self._Vp * (flux / self.observed.uncertainty.value)[:, np.newaxis]
         # normalizes different powers
         scl = np.sqrt((V*V).sum(0))
         if np.isfinite(scl[0]):  # check for validity before evaluating
@@ -138,13 +168,13 @@ class Normalize(InstrumentOperationModel):
                 msg = "The fit may be poorly conditioned"
                 warnings.warn(msg)
 
-            fit = np.dot(V, sol) * self.uncertainty
+            fit = np.dot(V, sol) * self.observed.uncertainty.value
             # keep coefficients in case the outside wants to look at it
             self.polynomial = Polynomial(sol, domain=self.domain.value,
                                          window=self.window.value)
             return wavelength, fit
         else:
-            wavelength, flux
+            return wavelength, flux
 
 
 class NormalizeParts(object):

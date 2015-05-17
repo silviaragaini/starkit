@@ -1,7 +1,8 @@
 from astropy import constants as const, units as u
-from specutils import Spectrum1D
 from astropy import modeling
-from scipy.signal import fftconvolve
+import scipy.ndimage as nd
+
+
 import numpy as np
 
 from starkit.base.operations.base import SpectralOperationModel
@@ -35,23 +36,28 @@ class RotationalBroadening(StellarOperationModel):
             self.velocity_per_pix = None
 
     def rotational_profile(self, vrot, limb_darkening):
+        vrot = float(vrot)
+        limb_darkening = float(limb_darkening)
         vrot_by_c = np.maximum(0.0001, np.abs(vrot)) / self.c_in_kms
 
-        half_width_pix = np.round((self.c_in_kms /
+        half_width_pix = np.round((vrot /
                                    self.velocity_per_pix)).astype(int)
         profile_velocity = (np.linspace(-half_width_pix, half_width_pix,
                                        2 * half_width_pix + 1)
                             * self.velocity_per_pix)
         profile = np.maximum(0.,
-                             1. - (profile_velocity / vrot_by_c) ** 2)
+                             1. - (profile_velocity / vrot) ** 2)
 
-        profile = ((2 * (1-limb_darkening) * np.sqrt(profile) +
+        profile = ((2 * (1 - limb_darkening) * np.sqrt(profile) +
                     0.5 * np.pi * limb_darkening * profile) /
                    (np.pi * vrot_by_c * (1. - limb_darkening / 3.)))
-        return profile/profile.sum()
+        return profile / profile.sum()
 
 
     def evaluate(self, wavelength, flux, v_rot, limb_darkening):
+        v_rot = np.asscalar(v_rot)
+        limb_darkening = np.asscalar(limb_darkening)
+
         if self.velocity_per_pix is None:
             raise NotImplementedError('Regridding not implemented yet')
 
@@ -59,8 +65,8 @@ class RotationalBroadening(StellarOperationModel):
             return wavelength, flux
 
         profile = self.rotational_profile(v_rot, limb_darkening)
-
-        return wavelength, fftconvolve(flux, profile, mode='same')
+        print profile
+        return wavelength, nd.convolve1d(flux, profile)
 
 class DopplerShift(StellarOperationModel):
 
@@ -69,13 +75,13 @@ class DopplerShift(StellarOperationModel):
     vrad = modeling.Parameter()
 
     def __init__(self, vrad=0):
-        super(DopplerShift, self).__init__(vrad=0)
+        super(DopplerShift, self).__init__(vrad=vrad)
         self.c_in_kms = const.c.to(u.km / u.s).value
 
 
     def evaluate(self, wavelength, flux, vrad):
 
-        beta = self.vrad / self.c_in_kms
+        beta = vrad / self.c_in_kms
         doppler_factor = np.sqrt((1+beta) / (1-beta))
         return wavelength * doppler_factor, flux
 
@@ -86,7 +92,7 @@ class CCM89Extinction(StellarOperationModel):
     operation_name = 'ccm89_extinction'
 
     a_v = modeling.Parameter(default=0.0)
-    r_v = modeling.Parameter(default=3.1)
+    r_v = modeling.Parameter(default=3.1, fixed=True)
 
     @property
     def ebv(self):
