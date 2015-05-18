@@ -65,7 +65,7 @@ class RotationalBroadening(StellarOperationModel):
             return wavelength, flux
 
         profile = self.rotational_profile(v_rot, limb_darkening)
-        print profile
+
         return wavelength, nd.convolve1d(flux, profile)
 
 class DopplerShift(StellarOperationModel):

@@ -20,10 +20,7 @@ class Chi2Likelihood(modeling.Model):
     def evaluate(self, wavelength, flux):
         loglikelihood =  -0.5 * np.sum(
             ((self.observed_flux - flux) / self.observed_uncertainty)**2)
-        if np.isnan(loglikelihood):
-            return -1e99
-        else:
-            return loglikelihood
+        return loglikelihood
 
 class PhotometryColorLikelihood(modeling.Model):
     inputs = ('photometry',)
